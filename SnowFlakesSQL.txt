@@ -1,0 +1,95 @@
+create database spotify_db
+
+CREATE STORAGE INTEGRATION s3_int
+  TYPE = EXTERNAL_STAGE
+  STORAGE_PROVIDER = 'S3'
+  STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::589591506983:role'
+  ENABLED = TRUE
+  STORAGE_ALLOWED_LOCATIONS = ('s3://spotify-etl-project-riaz')
+
+
+describe INTEGRATION s3_int
+
+CREATE OR REPLACE FILE FORMAT my_csv_format
+  TYPE = 'CSV'
+  FIELD_DELIMITER = ','
+  SKIP_HEADER = 1
+  null_if=('NULL','null')
+  empty_field_as_null=TRUE; -- Skip the first row if it contains headers
+
+
+CREATE OR REPLACE STAGE spotify_stage
+  URL = 's3://spotify-etl-project-riaz/transformed_data/' 
+  STORAGE_INTEGRATION = s3_int 
+  file_format=my_csv_format;
+
+LIST @spotify_stage
+
+Create or replace table tbl_album(
+    album_id String,
+    name string,
+    release_date Date,
+    total_tracks INT,
+    url string 
+)
+
+
+Create or replace table tbl_artists(
+    artist_id String,
+    name string,
+    url string 
+)
+
+Create or replace table tbl_song(
+    song_id String,
+    song_name string,
+    durations_ms INT,
+    url string,
+    Popularity Int,
+    song_added Date,
+    album_id String,
+    artist_id String
+)
+
+
+select * from tbl_song
+
+
+Copy into tbl_album
+from @spotify_stage/album_data/album_transformed_2024-04-20/run-1713631392203-part-r-00000
+
+Copy into tbl_artists
+from @spotify_stage/artist_data/artist_transformed_2024-04-20/run-1713631480585-part-r-00000
+
+
+Copy into tbl_song
+from @spotify_stage/song_data/songs_transformed_2024-04-20/run-1713631585344-part-r-00000
+
+create or replace schema pipe
+
+create or replace pipe spotify_db.pipe.tbl_song_pipe
+auto_ingest=True
+as 
+Copy into spotify_db.public.tbl_song
+from @spotify_db.public.spotify_stage/song_data/;
+
+
+create or replace pipe spotify_db.pipe.tbl_artist_pipe
+auto_ingest=True
+as 
+Copy into spotify_db.public.tbl_artists
+from @spotify_db.public.spotify_stage/artist_data/;
+
+create or replace pipe spotify_db.pipe.tbl_album_pipe
+auto_ingest=True
+as 
+Copy into spotify_db.public.tbl_album
+from @spotify_db.public.spotify_stage/album_data/;
+
+desc pipe tbl_album_pipe
+
+select count(*) from tbl_album
+
+select system$pipe_status('pipe.tbl_album_pipe')
+
+
